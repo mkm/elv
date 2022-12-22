@@ -1,22 +1,40 @@
 use std::io::Write;
 use std::cmp::max;
+use std::collections::HashMap;
 use terminal::Terminal;
 use crate::{
     polyset::Polyset,
-    syntax::{Expr, Program},
+    syntax::{Expr},
+    editor::{Cursor, CursorShape},
     value::Value,
     pretty::{Pretty, Size, Rect, Req},
 };
 
+#[derive(Debug, Clone)]
 pub struct VM {
+    parent: Option<Box<VM>>,
     stack: Vec<Value>,
 }
 
+pub type Trace = HashMap<CursorShape, Vec<VM>>;
+
 impl VM {
     pub fn new() -> Self {
-        VM {
+        Self {
+            parent: None,
             stack: Vec::new(),
         }
+    }
+
+    pub fn new_child(&self) -> Self {
+        Self {
+            parent: Some(Box::new(self.clone())),
+            stack: Vec::new(),
+        }
+    }
+
+    fn add_snapshot(&mut self, trace: &mut Trace, key: CursorShape) {
+        trace.entry(key).or_insert(Vec::new()).push(self.clone());
     }
 
     fn pop(&mut self) -> Option<Value> {
@@ -27,7 +45,7 @@ impl VM {
         self.stack.push(value)
     }
 
-    fn eval_prim(&mut self, prim: &str) {
+    fn eval_prim(&mut self, trace: &mut Trace, prim: &str) {
         let result = try {
             match prim {
                 "dup" => {
@@ -40,6 +58,21 @@ impl VM {
                     let snd = self.pop()?;
                     self.push(fst);
                     self.push(snd);
+                },
+                "copy" => {
+                    let index = self.pop()?.as_num()? as usize;
+                    let value = self.stack.get(self.stack.len() - 1 - index)?.clone();
+                    self.push(value);
+                },
+                "move" => {
+                    let offset = self.pop()?.as_num()? as usize;
+                    let index = self.stack.len() - 1 - offset;
+                    if index < self.stack.len() {
+                        let value = self.stack.remove(index);
+                        self.push(value);
+                    } else {
+                        None?
+                    }
                 },
                 "sb" => {
                     let new = self.pop()?;
@@ -70,6 +103,31 @@ impl VM {
                     let b = self.pop()?.as_num()?;
                     let a = self.pop()?.as_num()?;
                     self.push(Value::new_num(a / b));
+                },
+                "==" => {
+                    let b = self.pop()?;
+                    let a = self.pop()?;
+                    self.push(Value::new_bool(a == b));
+                },
+                "=<" => {
+                    let b = self.pop()?.as_num()?;
+                    let a = self.pop()?.as_num()?;
+                    self.push(Value::new_bool(a <= b));
+                },
+                ">=" => {
+                    let b = self.pop()?.as_num()?;
+                    let a = self.pop()?.as_num()?;
+                    self.push(Value::new_bool(a >= b));
+                },
+                "and" => {
+                    let b = self.pop()?.as_bool()?;
+                    let a = self.pop()?.as_bool()?;
+                    self.push(Value::new_bool(a && b));
+                },
+                "or" => {
+                    let b = self.pop()?.as_bool()?;
+                    let a = self.pop()?.as_bool()?;
+                    self.push(Value::new_bool(a || b));
                 },
                 "read" => {
                     let contents = std::fs::read_to_string(self.pop()?.as_str()?).ok()?;
@@ -126,9 +184,9 @@ impl VM {
                 },
                 "list" => {
                     let arg = self.pop()?;
-                    let prog = arg.as_quote()?;
-                    let mut vm = Self::new();
-                    vm.eval_program(prog);
+                    let cursor = arg.as_quote()?;
+                    let mut vm = self.new_child();
+                    vm.eval_cursor(trace, cursor.clone());
                     self.push(Value::new_list(vm.stack))
                 },
                 "each" => {
@@ -213,15 +271,26 @@ impl VM {
                     let arg2 = self.pop()?;
                     let arg1 = self.pop()?;
                     let list = arg1.as_list()?;
-                    let prog = arg2.as_quote()?;
+                    let cursor = arg2.as_quote()?;
                     let mut result = Vec::new();
                     for value in list {
-                        let mut vm = Self::new();
+                        let mut vm = self.new_child();
                         vm.stack.push(value.clone());
-                        vm.eval_program(prog);
+                        vm.eval_cursor(trace, cursor.clone());
                         result.append(&mut vm.stack);
                     }
                     self.push(Value::new_list(result));
+                },
+                "under" => {
+                    let count = self.pop()?.as_num()? as usize;
+                    let cursor = self.pop()?.as_quote()?.clone();
+                    let index = self.stack.len() - count;
+                    if index > self.stack.len() {
+                        None?
+                    }
+                    let mut temp = self.stack.split_off(index);
+                    self.eval_cursor(trace, cursor);
+                    self.stack.append(&mut temp);
                 },
                 _ => {
                     None?;
@@ -234,23 +303,45 @@ impl VM {
         }
     }
 
-    pub fn eval_expr(&mut self, expr: &Expr) {
+    /*pub fn eval_expr(&mut self, trace: &mut Trace, expr: &Expr) {
         match expr {
             Expr::Ident(prim) => {
-                self.eval_prim(prim.as_str());
+                self.eval_prim(trace, prim.as_str());
             },
             Expr::StrLit(s) => {
                 self.push(Value::new_str(s.clone()));
             },
             Expr::Quote(program) => {
-                self.push(Value::new_quote(program.clone()));
+                self.push(Value::new_quote(Cursor::initial(program.clone())));
             }
         }
     }
 
-    pub fn eval_program(&mut self, program: &Program) {
+    pub fn eval_program(&mut self, trace: &mut Trace, program: &Program) {
         for expr in program {
-            self.eval_expr(expr);
+            self.eval_expr(trace, expr);
+        }
+    }*/
+
+    pub fn eval_cursor(&mut self, trace: &mut Trace, mut cursor: Cursor) {
+        self.add_snapshot(trace, cursor.shape());
+        while let Some(expr) = cursor.next_expr().cloned() {
+            cursor.move_right();
+            match expr {
+                Expr::Ident(prim) => {
+                    self.eval_prim(trace, prim.as_str());
+                },
+                Expr::StrLit(s) => {
+                    self.push(Value::new_str(s.clone()));
+                },
+                Expr::Quote(_) => {
+                    let mut quote_cursor = cursor.clone();
+                    quote_cursor.move_up();
+                    quote_cursor.move_very_left();
+                    self.push(Value::new_quote(quote_cursor));
+                },
+            }
+            self.add_snapshot(trace, cursor.shape());
         }
     }
 }
@@ -266,6 +357,10 @@ impl Pretty for VM {
     }
 
     fn pretty<W: Write>(&self, region: Rect, term: &mut Terminal<W>) {
+        if let Some(parent) = &self.parent {
+            parent.pretty(region, term);
+            write!(term, "~~~~~~~~~~~~~~~~\r\n").unwrap();
+        }
         for item in &self.stack {
             write!(term, "# ").unwrap();
             item.pretty(region, term);

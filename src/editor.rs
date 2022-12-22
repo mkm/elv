@@ -6,7 +6,7 @@ use crate::{
     pretty::{Pretty, Req, Size, Rect},
 };
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Cursor {
     Edge(Program, Program),
     Quote(Program, Box<Cursor>, Program),
@@ -14,7 +14,7 @@ pub enum Cursor {
     StrLit(Program, usize, Vec<char>, Program),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum CursorShape {
     Edge(usize, usize),
     Quote(usize, Box<CursorShape>, usize),
@@ -50,6 +50,10 @@ impl Cursor {
 
     pub fn empty_quote() -> Self {
         Self::Quote(Vec::new(), Box::new(Self::empty()), Vec::new())
+    }
+
+    pub fn initial(program: Program) -> Self {
+        Self::Edge(Vec::new(), program)
     }
 
     pub fn shape(&self) -> CursorShape {
@@ -89,19 +93,18 @@ impl Cursor {
         }
     }
 
-    pub fn head_program(&self) -> &Program {
+    pub fn local_program(&self) -> Program {
         match self {
-            Self::Edge(head, _) => {
-                head
+            Self::Edge(head, tail) => {
+                let mut program = head.clone();
+                program.append(&mut tail.clone());
+                program
             },
-            Self::Quote(head, _, _) => {
-                head
+            Self::Quote(_, cursor, _) => {
+                cursor.local_program()
             },
-            Self::Ident(head, _, _, _) => {
-                head
-            },
-            Self::StrLit(head, _, _, _) => {
-                head
+            _ => {
+                panic!();
             },
         }
     }
@@ -154,6 +157,24 @@ impl Cursor {
                 if *n > 0 {
                     *n -= 1;
                 }
+            },
+        }
+    }
+
+    pub fn move_very_left(&mut self) {
+        match self {
+            Self::Edge(ref mut head, ref mut tail) => {
+                head.append(tail);
+                mem::swap(head, tail);
+            },
+            Self::Quote(_, cursor, _) => {
+                cursor.move_very_left();
+            },
+            Self::Ident(_, n, _, _) => {
+                *n = 0;
+            },
+            Self::StrLit(_, n, _, _) => {
+                *n = 0;
             },
         }
     }

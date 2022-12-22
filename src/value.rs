@@ -4,7 +4,7 @@ use std::borrow::Borrow;
 use terminal::{Terminal, Action, Color};
 use crate::{
     polyset::Polyset,
-    syntax::Program,
+    editor::Cursor,
     pretty::{Pretty, Size, Rect, Req},
 };
 
@@ -15,7 +15,7 @@ pub enum Val {
     Num(i64),
     List(Vec<Value>),
     Set(Polyset<Value>),
-    Quote(Program),
+    Quote(Cursor),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -34,6 +34,10 @@ impl Value {
         Self(Arc::new(Val::Num(val)))
     }
 
+    pub fn new_bool(val: bool) -> Self {
+        Self::new_num(if val { 1 } else { 0 })
+    }
+
     pub fn new_list(val: Vec<Value>) -> Self {
         Self(Arc::new(Val::List(val)))
     }
@@ -42,7 +46,7 @@ impl Value {
         Self(Arc::new(Val::Set(val)))
     }
 
-    pub fn new_quote(val: Program) -> Self {
+    pub fn new_quote(val: Cursor) -> Self {
         Self(Arc::new(Val::Quote(val)))
     }
 
@@ -70,6 +74,14 @@ impl Value {
         }
     }
 
+    pub fn as_bool(&self) -> Option<bool> {
+        match self.as_num()? {
+            0 => Some(false),
+            1 => Some(true),
+            _ => None,
+        }
+    }
+
     pub fn as_list(&self) -> Option<Vec<Value>> {
         match self.0.borrow() {
             Val::Str(s) => Some(s.chars().map(|c| Value::new_str(String::from(c))).collect::<Vec<_>>()),
@@ -85,9 +97,9 @@ impl Value {
         }
     }
 
-    pub fn as_quote(&self) -> Option<&Program> {
+    pub fn as_quote(&self) -> Option<&Cursor> {
         match self.0.borrow() {
-            Val::Quote(prog) => Some(&prog),
+            Val::Quote(cursor) => Some(&cursor),
             _ => None,
         }
     }
@@ -158,9 +170,9 @@ impl Pretty for Val {
                 }
                 write!(term, "]").unwrap();
             },
-            Val::Quote(program) => {
+            Val::Quote(cursor) => {
                 write!(term, "{{").unwrap();
-                program.pretty(region, term);
+                cursor.local_program().pretty(region, term);
                 write!(term, "}}").unwrap();
             },
         }

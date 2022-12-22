@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::io::Write;
 use terminal::{Terminal, KeyEvent, KeyCode};
 use crate::{
@@ -43,7 +44,7 @@ impl Shell {
                     self.cursor.insert(Cursor::empty_str_lit()),
                 KeyCode::Char('{') =>
                     self.cursor.insert(Cursor::empty_quote()),
-                KeyCode::Char('}') =>
+                KeyCode::Char('}') | KeyCode::Down =>
                     self.cursor.move_out(),
                 _ =>
                     (),
@@ -90,8 +91,17 @@ impl Shell {
         if self.cursor.mode() == Mode::Normal {
             write!(term, "\r\n\r\n").unwrap();
             let mut vm = VM::new();
-            vm.eval_program(&self.cursor.head_program());
-            vm.pretty(region, term);
+            let mut trace = HashMap::new();
+            vm.eval_cursor(&mut trace, Cursor::initial(self.cursor.program()));
+            // vm.eval_program(&mut trace, &self.cursor.head_program());
+            if let Some(snapshots) = trace.get(&self.cursor.shape()) {
+                for snapshot in snapshots.into_iter().take(4) {
+                    write!(term, "\r\n").unwrap();
+                    snapshot.pretty(region, term);
+                }
+            }
+            // write!(term, "\r\n\r\n").unwrap();
+            // vm.pretty(region, term);
         }
     }
 }
