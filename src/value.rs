@@ -1,11 +1,10 @@
-use std::io::Write;
 use std::sync::Arc;
 use std::borrow::Borrow;
-use terminal::{Terminal, Action, Color};
+use terminal::Color;
 use crate::{
     polyset::Polyset,
     editor::Cursor,
-    pretty::{Pretty, Size, Rect, Req},
+    pretty::{PrettyText, TextBuilder},
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -105,91 +104,57 @@ impl Value {
     }
 }
 
-impl Pretty for Val {
-    fn requirements(&self) -> Req {
-        Req {
-            min_space: 1,
-            wanted_space: 1,
-            min_size: Size { width: 1, height: 1 },
-            wanted_size: Size { width: 1, height: 1 },
-        }
-    }
-
-    fn pretty<W: Write>(&self, region: Rect, term: &mut Terminal<W>) {
+impl PrettyText for Val {
+    fn get_text(&self, text: &mut TextBuilder) {
         match self {
             Val::Poison => {
-                write!(term, "☠").unwrap();
+                text.write_str(Color::Black, Color::White, "☠");
             },
             Val::Str(s) => {
-                term.batch(Action::SetForegroundColor(Color::Green)).unwrap();
-                let mut buf: Vec<_> = s.replace('\n', "⋅").chars().collect();
-                buf.truncate(350);
-                if buf.is_empty() {
-                    buf.push('ε');
+                let output = s.replace('\n', "⋅");
+                if output.is_empty() {
+                    text.write_str(Color::Green, Color::Black, "ε");
+                } else {
+                    text.write_str(Color::Green, Color::Black, &output);
                 }
-                if buf.len() == 350 {
-                    buf.push('…');
-                }
-                let output: String = buf.into_iter().collect();
-                write!(term, "{output}").unwrap();
-                term.batch(Action::ResetColor).unwrap();
             },
             Val::Num(n) => {
-                term.batch(Action::SetForegroundColor(Color::Green)).unwrap();
-                write!(term, "{n}").unwrap();
-                term.batch(Action::ResetColor).unwrap();
+                text.write_str(Color::Green, Color::Black, &format!("{n}"));
             },
             Val::List(values) => {
-                write!(term, "[").unwrap();
+                text.write_str_default("[");
                 for (i, value) in values.iter().enumerate() {
                     if i > 0 {
-                        write!(term, " ").unwrap();
+                        text.write_str_default(" ");
                     }
-                    if i > 20 {
-                        write!(term, "…").unwrap();
-                        break;
-                    }
-                    value.pretty(region, term);
+                    value.get_text(text);
                 }
-                write!(term, "]").unwrap();
+                text.write_str_default("]");
             },
             Val::Set(values) => {
-                write!(term, "[").unwrap();
+                text.write_str_default("[");
                 for (i, (value, n)) in values.iter().enumerate() {
                     if i > 0 {
-                        write!(term, " ").unwrap();
+                        text.write_str_default(" ");
                     }
-                    if i > 20 {
-                        write!(term, "…").unwrap();
-                        break;
-                    }
-                    value.pretty(region, term);
+                    value.get_text(text);
                     if *n != 1 {
-                        write!(term, ":{n}").unwrap();
+                        text.write_str_default(&format!(":{n}"));
                     }
                 }
-                write!(term, "]").unwrap();
+                text.write_str_default("]");
             },
             Val::Quote(cursor) => {
-                write!(term, "{{").unwrap();
-                cursor.local_program().pretty(region, term);
-                write!(term, "}}").unwrap();
+                text.write_str_default("{");
+                cursor.local_program().get_text(text);
+                text.write_str_default("}");
             },
         }
     }
 }
 
-impl Pretty for Value {
-    fn requirements(&self) -> Req {
-        Req {
-            min_space: 1,
-            wanted_space: 1,
-            min_size: Size { width: 1, height: 1 },
-            wanted_size: Size { width: 1, height: 1 },
-        }
-    }
-
-    fn pretty<W: Write>(&self, region: Rect, term: &mut Terminal<W>) {
-        self.0.pretty(region, term);
+impl PrettyText for Value {
+    fn get_text(&self, text: &mut TextBuilder) {
+        self.0.get_text(text);
     }
 }

@@ -1,13 +1,12 @@
-use std::io::Write;
 use std::cmp::max;
 use std::collections::HashMap;
-use terminal::Terminal;
+use terminal::Color;
 use crate::{
     polyset::Polyset,
     syntax::{Expr},
     editor::{Cursor, CursorShape},
     value::Value,
-    pretty::{Pretty, Size, Rect, Req},
+    pretty::{Pretty, Layout},
 };
 
 #[derive(Debug, Clone)]
@@ -303,26 +302,6 @@ impl VM {
         }
     }
 
-    /*pub fn eval_expr(&mut self, trace: &mut Trace, expr: &Expr) {
-        match expr {
-            Expr::Ident(prim) => {
-                self.eval_prim(trace, prim.as_str());
-            },
-            Expr::StrLit(s) => {
-                self.push(Value::new_str(s.clone()));
-            },
-            Expr::Quote(program) => {
-                self.push(Value::new_quote(Cursor::initial(program.clone())));
-            }
-        }
-    }
-
-    pub fn eval_program(&mut self, trace: &mut Trace, program: &Program) {
-        for expr in program {
-            self.eval_expr(trace, expr);
-        }
-    }*/
-
     pub fn eval_cursor(&mut self, trace: &mut Trace, mut cursor: Cursor) {
         self.add_snapshot(trace, cursor.shape());
         while let Some(expr) = cursor.next_expr().cloned() {
@@ -347,24 +326,16 @@ impl VM {
 }
 
 impl Pretty for VM {
-    fn requirements(&self) -> Req {
-        Req {
-            min_space: 1,
-            wanted_space: 1,
-            min_size: Size { width: 1, height: 1 },
-            wanted_size: Size { width: 1, height: 1 },
-        }
-    }
-
-    fn pretty<W: Write>(&self, region: Rect, term: &mut Terminal<W>) {
+    fn layout(&self) -> Layout {
+        let layout = Layout::VConcat(self.stack.iter().enumerate().map(|(index, item)| {
+            let offset = self.stack.len() - index - 1;
+            let header = Layout::ExactWidth(Box::new(Layout::mk_text(Color::Cyan, Color::Black, &format!("{offset}"))), 4);
+            Layout::Diminish(Box::new(Layout::HConcat(vec![header, item.layout()])))
+        }).collect());
         if let Some(parent) = &self.parent {
-            parent.pretty(region, term);
-            write!(term, "~~~~~~~~~~~~~~~~\r\n").unwrap();
-        }
-        for item in &self.stack {
-            write!(term, "# ").unwrap();
-            item.pretty(region, term);
-            write!(term, "\r\n").unwrap();
+            Layout::VConcat(vec![parent.layout(), layout])
+        } else {
+            layout
         }
     }
 }

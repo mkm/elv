@@ -1,6 +1,5 @@
-use std::io::Write;
-use terminal::{Terminal, Action, Color};
-use crate::pretty::{Pretty, Size, Rect, Req};
+use terminal::Color;
+use crate::pretty::{PrettyText, TextBuilder};
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Expr {
@@ -11,83 +10,39 @@ pub enum Expr {
 
 pub type Program = Vec<Expr>;
 
-impl Expr {
-    fn pretty_size(&self) -> usize {
-        match self {
-            Expr::Ident(s) => s.chars().count(),
-            Expr::StrLit(s) => s.chars().count(),
-            Expr::Quote(program) => pretty_program_size(program),
-        }
-    }
-}
-
-fn pretty_program_size(program: &Program) -> usize {
-    if program.is_empty() {
-        0
-    } else {
-        program.iter().map(|expr| expr.pretty_size()).sum::<usize>() + program.len() - 1
-    }
-}
-
-impl Pretty for Expr {
-    fn requirements(&self) -> Req {
-        let space = self.pretty_size();
-        Req {
-            min_space: 1,
-            wanted_space: space,
-            min_size: Size { width: 1, height: 1 },
-            wanted_size: Size { width: space, height: 1 },
-        }
-    }
-
-    fn pretty<W: Write>(&self, region: Rect, term: &mut Terminal<W>) {
+impl PrettyText for Expr {
+    fn get_text(&self, text: &mut TextBuilder) {
         match self {
             Expr::Ident(s) => {
-                term.batch(Action::SetForegroundColor(Color::Red)).unwrap();
                 if s.is_empty() {
-                    write!(term, "␣").unwrap();
+                    text.write_str(Color::Red, Color::Black, "␣");
                 } else {
-                    write!(term, "{}", s).unwrap();
+                    text.write_str(Color::Red, Color::Black, &s);
                 }
-                term.batch(Action::ResetColor).unwrap();
             },
             Expr::StrLit(s) => {
-                term.batch(Action::SetForegroundColor(Color::Green)).unwrap();
                 if s.is_empty() {
-                    write!(term, "ε").unwrap();
+                    text.write_str(Color::Green, Color::Black, "ε");
                 } else {
-                    write!(term, "{}", s).unwrap();
+                    text.write_str(Color::Green, Color::Black, &s);
                 }
-                term.batch(Action::ResetColor).unwrap();
             },
             Expr::Quote(program) => {
-                write!(term, "{{").unwrap();
-                program.pretty(region, term);
-                write!(term, "}}").unwrap();
+                text.write_str_default("{");
+                program.get_text(text);
+                text.write_str_default("}");
             },
         }
     }
 }
 
-impl Pretty for Program {
-    fn requirements(&self) -> Req {
-        let space = pretty_program_size(self);
-        Req {
-            min_space: 1,
-            wanted_space: space,
-            min_size: Size { width: 1, height: 1 },
-            wanted_size: Size { width: space, height: 1 },
-        }
-    }
-
-    fn pretty<W: Write>(&self, region: Rect, term: &mut Terminal<W>) {
-        let mut space = false;
-        for expr in self {
-            if space {
-                write!(term, " ").unwrap();
+impl PrettyText for Program {
+    fn get_text(&self, text: &mut TextBuilder) {
+        for (i, expr) in self.iter().enumerate() {
+            if i > 0 {
+                text.write_str_default(" ");
             }
-            expr.pretty(region, term);
-            space = true;
+            expr.get_text(text);
         }
     }
 }

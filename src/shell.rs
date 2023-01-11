@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 use std::io::Write;
-use terminal::{Terminal, KeyEvent, KeyCode};
+use terminal::{Terminal, KeyEvent, KeyCode, Value, Retrieved, Color};
 use crate::{
     editor::{Cursor, Mode},
-    pretty::{Pretty, Pos, Size, Rect},
+    pretty::{Pretty, Pos, Size, Layout, Symbol},
     eval::VM,
 };
 
@@ -83,25 +83,36 @@ impl Shell {
     }
 
     pub fn render<W: Write>(&self, term: &mut Terminal<W>) {
-        let region = Rect {
-            pos: Pos { x: 0, y: 0 },
-            size: Size { width: 1, height: 1 },
+        let size = match term.get(Value::TerminalSize) {
+            Ok(Retrieved::TerminalSize(width, height)) =>
+                Size { width: width as usize, height: height as usize },
+            _ =>
+                panic!(),
         };
-        self.cursor.pretty(region, term);
-        if self.cursor.mode() == Mode::Normal {
-            write!(term, "\r\n\r\n").unwrap();
+        self.layout().display(Pos { x: 0, y: 0 }, size, term);
+    }
+}
+
+impl Pretty for Shell {
+    fn layout(&self) -> Layout {
+        let cmdline = Layout::Weight(Box::new(self.cursor.layout()), 100f64);
+        let sep = Layout::HLine(Symbol {
+            glyph: '~',
+            foreground: Color::Grey,
+            background: Color::Black,
+        });
+        let debugger = if self.cursor.mode() == Mode::Normal {
             let mut vm = VM::new();
             let mut trace = HashMap::new();
             vm.eval_cursor(&mut trace, Cursor::initial(self.cursor.program()));
-            // vm.eval_program(&mut trace, &self.cursor.head_program());
             if let Some(snapshots) = trace.get(&self.cursor.shape()) {
-                for snapshot in snapshots.into_iter().take(4) {
-                    write!(term, "\r\n").unwrap();
-                    snapshot.pretty(region, term);
-                }
+                Layout::VConcat(snapshots.iter().take(16).map(|snapshot| snapshot.layout()).collect())
+            } else {
+                Layout::Empty
             }
-            // write!(term, "\r\n\r\n").unwrap();
-            // vm.pretty(region, term);
-        }
+        } else {
+            Layout::Empty
+        };
+        Layout::VConcat(vec![cmdline, sep, debugger])
     }
 }

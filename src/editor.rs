@@ -1,9 +1,8 @@
 use std::mem;
-use std::io::Write;
-use terminal::{Terminal, Action, Color};
+use terminal::Color;
 use crate::{
     syntax::{Expr, Program},
-    pretty::{Pretty, Req, Size, Rect},
+    pretty::{PrettyText, TextBuilder},
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -310,75 +309,46 @@ impl Cursor {
     }
 }
 
-impl Pretty for Cursor {
-    fn requirements(&self) -> Req {
-        Req {
-            min_space: 1,
-            wanted_space: 1,
-            min_size: Size { width: 1, height: 1 },
-            wanted_size: Size { width: 1, height: 1 },
-        }
-    }
-
-    fn pretty<W: Write>(&self, region: Rect, term: &mut Terminal<W>) {
+impl PrettyText for Cursor {
+    fn get_text(&self, text: &mut TextBuilder) {
         match self {
             Self::Edge(head, tail) => {
-                head.pretty(region, term);
-                term.batch(Action::SetBackgroundColor(Color::Blue)).unwrap();
-                write!(term, " ").unwrap();
-                term.batch(Action::ResetColor).unwrap();
-                tail.pretty(region, term);
+                head.get_text(text);
+                text.write_str(Color::Blue, Color::Blue, " ");
+                tail.get_text(text);
             },
             Self::Quote(head, cursor, tail) => {
-                head.pretty(region, term);
-                write!(term, " {{").unwrap();
-                cursor.pretty(region, term);
-                write!(term, "}} ").unwrap();
-                tail.pretty(region, term);
+                head.get_text(text);
+                text.write_str_default(" {");
+                cursor.get_text(text);
+                text.write_str_default("} ");
+                tail.get_text(text);
             },
             Self::Ident(head, n, s, tail) => {
-                head.pretty(region, term);
+                head.get_text(text);
                 if !head.is_empty() {
-                    write!(term, " ").unwrap();
+                    text.write_str_default(" ");
                 }
-                term.batch(Action::SetForegroundColor(Color::Red)).unwrap();
-                for c in &s[.. *n] {
-                    write!(term, "{c}").unwrap();
-                }
-                term.batch(Action::SetBackgroundColor(Color::Magenta)).unwrap();
-                write!(term, " ").unwrap();
-                term.batch(Action::ResetColor).unwrap();
-                term.batch(Action::SetForegroundColor(Color::Red)).unwrap();
-                for c in &s[*n ..] {
-                    write!(term, "{c}").unwrap();
-                }
-                term.batch(Action::ResetColor).unwrap();
+                text.write_str(Color::Red, Color::Black, &s[.. *n].iter().collect::<String>());
+                text.write_str(Color::Magenta, Color::Magenta, " ");
+                text.write_str(Color::Red, Color::Black, &s[*n ..].iter().collect::<String>());
                 if !tail.is_empty() {
-                    write!(term, " ").unwrap();
+                    text.write_str_default(" ");
                 }
-                tail.pretty(region, term);
+                tail.get_text(text);
             },
             Self::StrLit(head, n, s, tail) => {
-                head.pretty(region, term);
+                head.get_text(text);
                 if !head.is_empty() {
-                    write!(term, " ").unwrap();
+                    text.write_str_default(" ");
                 }
-                term.batch(Action::SetForegroundColor(Color::Green)).unwrap();
-                for c in &s[.. *n] {
-                    write!(term, "{c}").unwrap();
-                }
-                term.batch(Action::SetBackgroundColor(Color::Magenta)).unwrap();
-                write!(term, " ").unwrap();
-                term.batch(Action::ResetColor).unwrap();
-                term.batch(Action::SetForegroundColor(Color::Green)).unwrap();
-                for c in &s[*n ..] {
-                    write!(term, "{c}").unwrap();
-                }
-                term.batch(Action::ResetColor).unwrap();
+                text.write_str(Color::Green, Color::Black, &s[.. *n].iter().collect::<String>());
+                text.write_str(Color::Magenta, Color::Magenta, " ");
+                text.write_str(Color::Green, Color::Black, &s[*n ..].iter().collect::<String>());
                 if !tail.is_empty() {
-                    write!(term, " ").unwrap();
+                    text.write_str_default(" ");
                 }
-                tail.pretty(region, term);
+                tail.get_text(text);
             },
         }
     }
