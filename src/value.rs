@@ -1,5 +1,4 @@
 use std::sync::Arc;
-use std::borrow::Borrow;
 use terminal::Color;
 use crate::{
     polyset::Polyset,
@@ -9,28 +8,65 @@ use crate::{
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Val {
-    Poison,
-    Str(String),
-    Num(i64),
     List(Vec<Value>),
     Set(Polyset<Value>),
     Quote(Cursor),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub struct Value(Arc<Val>);
+pub enum Value {
+    Poison,
+    Char(char),
+    Num(i64),
+    Ptr(Arc<Val>),
+}
+
+impl Val {
+    pub fn as_list(&self) -> Option<Vec<Value>> {
+        match self {
+            Self::List(list) => Some(list.clone()),
+            _ => None,
+        }
+    }
+
+    pub fn as_set(&self) -> Option<Polyset<Value>> {
+        match self {
+            Self::List(list) => Some(list.iter().cloned().collect()),
+            Self::Set(set) => Some(set.clone()),
+            _ => None,
+        }
+    }
+
+    pub fn as_quote(&self) -> Option<&Cursor> {
+        match self {
+            Self::Quote(quote) => Some(quote),
+            _ => None,
+        }
+    }
+
+    pub fn as_slice(&self) -> Option<&[Value]> {
+        match self {
+            Self::List(list) => Some(list),
+            _ => None,
+        }
+    }
+}
 
 impl Value {
     pub fn new_poison() -> Self {
-        Self(Arc::new(Val::Poison))
+        Self::Poison
     }
 
-    pub fn new_str(val: String) -> Self {
-        Self(Arc::new(Val::Str(val)))
+    pub fn new_char(c: char) -> Self {
+        Self::Char(c)
     }
 
     pub fn new_num(val: i64) -> Self {
-        Self(Arc::new(Val::Num(val)))
+        Self::Num(val)
+    }
+
+    pub fn new_str(val: String) -> Self {
+        Self::Ptr(Arc::new(Val::List(val.chars().map(Value::new_char).collect())))
     }
 
     pub fn new_bool(val: bool) -> Self {
@@ -38,37 +74,27 @@ impl Value {
     }
 
     pub fn new_list(val: Vec<Value>) -> Self {
-        Self(Arc::new(Val::List(val)))
+        Self::Ptr(Arc::new(Val::List(val)))
     }
 
     pub fn new_set(val: Polyset<Value>) -> Self {
-        Self(Arc::new(Val::Set(val)))
+        Self::Ptr(Arc::new(Val::Set(val)))
     }
 
     pub fn new_quote(val: Cursor) -> Self {
-        Self(Arc::new(Val::Quote(val)))
+        Self::Ptr(Arc::new(Val::Quote(val)))
     }
 
-    pub fn as_str(&self) -> Option<&str> {
-        match self.0.borrow() {
-            Val::Str(s) => Some(s.as_str()),
+    pub fn as_char(&self) -> Option<char> {
+        match self {
+            Self::Char(c) => Some(*c),
             _ => None,
         }
     }
 
-    pub fn as_char(&self) -> Option<char> {
-        let s = self.as_str()?;
-        if s.len() == 1 {
-            s.chars().next()
-        } else {
-            None
-        }
-    }
-
     pub fn as_num(&self) -> Option<i64> {
-        match self.0.borrow() {
-            Val::Str(s) => s.parse().ok(),
-            Val::Num(n) => Some(*n),
+        match self {
+            Self::Num(n) => Some(*n),
             _ => None,
         }
     }
@@ -82,45 +108,41 @@ impl Value {
     }
 
     pub fn as_list(&self) -> Option<Vec<Value>> {
-        match self.0.borrow() {
-            Val::Str(s) => Some(s.chars().map(|c| Value::new_str(String::from(c))).collect::<Vec<_>>()),
-            Val::List(v) => Some(v.clone()),
+        match self {
+            Self::Ptr(val) => val.as_list(),
             _ => None,
         }
     }
 
     pub fn as_set(&self) -> Option<Polyset<Value>> {
-        match self.0.borrow() {
-            Val::Set(s) => Some(s.clone()),
-            _ => Some(Polyset::from_vec(self.as_list()?)),
+        match self {
+            Self::Ptr(val) => val.as_set(),
+            _ => None,
         }
     }
 
     pub fn as_quote(&self) -> Option<&Cursor> {
-        match self.0.borrow() {
-            Val::Quote(cursor) => Some(&cursor),
+        match self {
+            Self::Ptr(val) => val.as_quote(),
             _ => None,
         }
+    }
+
+    pub fn as_slice(&self) -> Option<&[Value]> {
+        match self {
+            Self::Ptr(val) => val.as_slice(),
+            _ => None,
+        }
+    }
+
+    pub fn as_string(&self) -> Option<String> {
+        self.as_slice()?.iter().map(|v| v.as_char()).collect()
     }
 }
 
 impl PrettyText for Val {
     fn get_text(&self, text: &mut TextBuilder) {
         match self {
-            Val::Poison => {
-                text.write_str(Color::Black, Color::White, "☠");
-            },
-            Val::Str(s) => {
-                let output = s.replace('\n', "⋅");
-                if output.is_empty() {
-                    text.write_str(Color::Green, Color::Black, "ε");
-                } else {
-                    text.write_str(Color::Green, Color::Black, &output);
-                }
-            },
-            Val::Num(n) => {
-                text.write_str(Color::Green, Color::Black, &format!("{n}"));
-            },
             Val::List(values) => {
                 text.write_str_default("[");
                 for (i, value) in values.iter().enumerate() {
@@ -155,6 +177,24 @@ impl PrettyText for Val {
 
 impl PrettyText for Value {
     fn get_text(&self, text: &mut TextBuilder) {
-        self.0.get_text(text);
+        match self {
+            Self::Poison => {
+                text.write_str(Color::Black, Color::White, "☠");
+            },
+            Self::Char(c) => {
+                let s = match *c {
+                    '\n' => "↵".to_string(),
+                    ' ' => "⋅".to_string(),
+                    c => c.to_string(),
+                };
+                text.write_str(Color::Green, Color::Black, &s);
+            },
+            Self::Num(n) => {
+                text.write_str(Color::Green, Color::Black, &format!("{n}"));
+            },
+            Self::Ptr(val) => {
+                val.get_text(text);
+            },
+        }
     }
 }

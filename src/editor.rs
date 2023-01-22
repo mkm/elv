@@ -11,6 +11,7 @@ pub enum Cursor {
     Quote(Program, Box<Cursor>, Program),
     Ident(Program, usize, Vec<char>, Program),
     StrLit(Program, usize, Vec<char>, Program),
+    NumLit(Program, Option<i64>, Program),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -19,6 +20,7 @@ pub enum CursorShape {
     Quote(usize, Box<CursorShape>, usize),
     Ident(usize, usize),
     StrLit(usize, usize),
+    NumLit(usize, usize),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -26,6 +28,7 @@ pub enum Mode {
     Normal,
     Ident,
     StrLit,
+    NumLit,
 }
 
 impl Default for Cursor {
@@ -47,6 +50,10 @@ impl Cursor {
         Self::StrLit(Vec::new(), 0, Vec::new(), Vec::new())
     }
 
+    pub fn empty_num_lit() -> Self {
+        Self::NumLit(Vec::new(), None, Vec::new())
+    }
+
     pub fn empty_quote() -> Self {
         Self::Quote(Vec::new(), Box::new(Self::empty()), Vec::new())
     }
@@ -61,6 +68,7 @@ impl Cursor {
             Self::Quote(head, cursor, tail) => CursorShape::Quote(head.len(), Box::new(cursor.shape()), tail.len()),
             Self::Ident(head, _, _, tail) => CursorShape::Ident(head.len(), tail.len()),
             Self::StrLit(head, _, _, tail) => CursorShape::StrLit(head.len(), tail.len()),
+            Self::NumLit(head, _, tail) => CursorShape::NumLit(head.len(), tail.len()),
         }
     }
 
@@ -70,6 +78,7 @@ impl Cursor {
             Self::Quote(_, cursor, _) => cursor.mode(),
             Self::Ident(_, _, _, _) => Mode::Ident,
             Self::StrLit(_, _, _, _) => Mode::StrLit,
+            Self::NumLit(_, _, _) => Mode::NumLit,
         }
     }
 
@@ -114,6 +123,7 @@ impl Cursor {
             Self::Quote(_, cursor, _) => cursor.next_expr(),
             Self::Ident(_, _, _, tail) => tail.get(0),
             Self::StrLit(_, _, _, tail) => tail.get(0),
+            Self::NumLit(_, _, tail) => tail.get(0),
         }
     }
 
@@ -132,6 +142,13 @@ impl Cursor {
             },
             Self::StrLit(mut head, _, s, tail) => {
                 head.push(Expr::StrLit(s.into_iter().collect()));
+                Self::Edge(head, tail)
+            },
+            Self::NumLit(mut head, n, tail) => {
+                match n {
+                    Some(n) => head.push(Expr::NumLit(n)),
+                    None => (),
+                }
                 Self::Edge(head, tail)
             },
         };
@@ -157,6 +174,7 @@ impl Cursor {
                     *n -= 1;
                 }
             },
+            Self::NumLit(_, _, _) => {},
         }
     }
 
@@ -175,6 +193,7 @@ impl Cursor {
             Self::StrLit(_, n, _, _) => {
                 *n = 0;
             },
+            Self::NumLit(_, _, _) => {},
         }
     }
 
@@ -199,6 +218,7 @@ impl Cursor {
                     *n += 1;
                 }
             },
+            Self::NumLit(_, _, _) => {},
         }
     }
 
@@ -267,6 +287,11 @@ impl Cursor {
                 stail.append(&mut tail);
                 Self::StrLit(head, n, s, stail)
             },
+            (Self::Edge(mut head, mut tail), Self::NumLit(mut shead, n, mut stail)) => {
+                head.append(&mut shead);
+                stail.append(&mut tail);
+                Self::NumLit(head, n, stail)
+            },
             (Self::Quote(head, mut cursor, tail), subst) => {
                 cursor.insert(subst);
                 Self::Quote(head, cursor, tail)
@@ -304,6 +329,11 @@ impl Cursor {
             Self::StrLit(_, n, s, _) => {
                 s.insert(*n, c);
                 *n += 1;
+            },
+            Self::NumLit(_, n, _) => {
+                if let Some(digit) = c.to_digit(10) {
+                    *n = Some(10 * n.unwrap_or(0) + digit as i64);
+                }
             },
         }
     }
@@ -345,6 +375,25 @@ impl PrettyText for Cursor {
                 text.write_str(Color::Green, Color::Black, &s[.. *n].iter().collect::<String>());
                 text.write_str(Color::Magenta, Color::Magenta, " ");
                 text.write_str(Color::Green, Color::Black, &s[*n ..].iter().collect::<String>());
+                if !tail.is_empty() {
+                    text.write_str_default(" ");
+                }
+                tail.get_text(text);
+            },
+            Self::NumLit(head, n, tail) => {
+                head.get_text(text);
+                if !head.is_empty() {
+                    text.write_str_default(" ");
+                }
+                match n {
+                    Some(n) => {
+                        text.write_str(Color::Green, Color::Black, &format!("{n}"));
+                    },
+                    None => {
+                        text.write_str(Color::Green, Color::Black, "0");
+                    },
+                }
+                text.write_str(Color::Magenta, Color::Magenta, " ");
                 if !tail.is_empty() {
                     text.write_str_default(" ");
                 }

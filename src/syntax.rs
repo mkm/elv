@@ -5,6 +5,7 @@ use crate::pretty::{PrettyText, TextBuilder};
 pub enum Expr {
     Ident(String),
     StrLit(String),
+    NumLit(i64),
     Quote(Program),
 }
 
@@ -26,6 +27,9 @@ impl PrettyText for Expr {
                 } else {
                     text.write_str(Color::Green, Color::Black, &s);
                 }
+            },
+            Expr::NumLit(n) => {
+                text.write_str(Color::Green, Color::Black, &format!("{n}"));
             },
             Expr::Quote(program) => {
                 text.write_str_default("{");

@@ -24,6 +24,7 @@ impl Shell {
             Mode::Normal => self.handle_key_event_normal(event),
             Mode::Ident => self.handle_key_event_ident(event),
             Mode::StrLit => self.handle_key_event_strlit(event),
+            Mode::NumLit => self.handle_key_event_numlit(event),
         }
     }
 
@@ -40,6 +41,8 @@ impl Shell {
                     self.cursor.delete_before(),
                 KeyCode::Char('i') =>
                     self.cursor.insert(Cursor::empty_ident()),
+                KeyCode::Char('n') =>
+                    self.cursor.insert(Cursor::empty_num_lit()),
                 KeyCode::Char('"') =>
                     self.cursor.insert(Cursor::empty_str_lit()),
                 KeyCode::Char('{') =>
@@ -72,6 +75,21 @@ impl Shell {
             match event.code {
                 KeyCode::Char(c) =>
                     if c == '"' {
+                        self.cursor.escape_to_normal();
+                    } else {
+                        self.cursor.input(c);
+                    },
+                _ =>
+                    (),
+            }
+        }
+    }
+
+    pub fn handle_key_event_numlit(&mut self, event: KeyEvent) {
+        if event.modifiers.is_empty() {
+            match event.code {
+                KeyCode::Char(c) =>
+                    if c == 'n' {
                         self.cursor.escape_to_normal();
                     } else {
                         self.cursor.input(c);

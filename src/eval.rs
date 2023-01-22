@@ -86,8 +86,8 @@ impl VM {
                 "s" => {
                     let arg3 = self.pop()?;
                     let arg2 = self.pop()?;
-                    let haystack = self.pop()?.as_str()?.to_string();
-                    self.push(Value::new_str(haystack.replace(arg2.as_str()?, arg3.as_str()?)));
+                    let haystack = self.pop()?.as_string()?;
+                    self.push(Value::new_str(haystack.replace(&arg2.as_string()?, &arg3.as_string()?)));
                 },
                 "inc" => {
                     let a = self.pop()?.as_num()?;
@@ -129,12 +129,12 @@ impl VM {
                     self.push(Value::new_bool(a || b));
                 },
                 "read" => {
-                    let contents = std::fs::read_to_string(self.pop()?.as_str()?).ok()?;
+                    let contents = std::fs::read_to_string(self.pop()?.as_string()?).ok()?;
                     self.push(Value::new_str(contents));
                 },
                 "lines" => {
-                    let arg = self.pop()?;
-                    let lines = arg.as_str()?.split('\n');
+                    let arg = self.pop()?.as_string()?;
+                    let lines = arg.split('\n');
                     let mut result: Vec<_> = lines.map(|line| Value::new_str(line.to_string())).collect();
                     if result.last() == Some(&Value::new_str(String::new())) {
                         result.pop().unwrap();
@@ -142,8 +142,8 @@ impl VM {
                     self.push(Value::new_list(result));
                 },
                 "words" => {
-                    let arg = self.pop()?;
-                    let words = arg.as_str()?.split(|c: char| !c.is_alphanumeric());
+                    let arg = self.pop()?.as_string()?;
+                    let words = arg.split(|c: char| !c.is_alphanumeric());
                     self.push(Value::new_list(words.map(|word| Value::new_str(word.to_string())).collect()));
                 },
                 "split" => {
@@ -181,6 +181,20 @@ impl VM {
                     let lower = self.pop()?.as_char()?;
                     self.push(Value::new_list((lower ..= upper).map(|c| Value::new_str(String::from(c))).collect()));
                 },
+                "indexed" => {
+                    let list = self.pop()?.as_list()?;
+                    let indexed = list.iter().enumerate().map(|(i, v)| {
+                        Value::new_list(vec![Value::new_num(i as i64), v.clone()])
+                    });
+                    self.push(Value::new_list(indexed.collect()));
+                },
+                "num" => {
+                    let arg = self.pop()?.as_string()?;
+                    match arg.parse() {
+                        Ok(n) => self.push(Value::new_num(n)),
+                        Err(_) => self.push(Value::new_poison()),
+                    }
+                },
                 "list" => {
                     let arg = self.pop()?;
                     let cursor = arg.as_quote()?;
@@ -212,13 +226,22 @@ impl VM {
                     let list = self.pop()?.as_list()?;
                     self.push(Value::new_list(list.chunks(size as usize).map(|chunk| Value::new_list(chunk.to_vec())).collect()));
                 },
+                "frames" => {
+                    let size = self.pop()?.as_num()? as usize;
+                    let list = self.pop()?.as_list()?;
+                    if size > list.len() {
+                        self.push(Value::new_list(Vec::new()));
+                    } else {
+                        let mut result = Vec::new();
+                        for i in 0 .. list.len() - size {
+                            result.push(Value::new_list(list[i .. i + size].to_vec()));
+                        }
+                        self.push(Value::new_list(result));
+                    }
+                },
                 "len" => {
                     let arg = self.pop()?;
-                    if let Some(s) = arg.as_str() {
-                        self.push(Value::new_num(s.len() as i64));
-                    } else {
-                        self.push(Value::new_num(arg.as_list()?.len() as i64));
-                    }
+                    self.push(Value::new_num(arg.as_slice()?.len() as i64));
                 },
                 "sum" => {
                     let arg = self.pop()?;
@@ -312,6 +335,9 @@ impl VM {
                 },
                 Expr::StrLit(s) => {
                     self.push(Value::new_str(s.clone()));
+                },
+                Expr::NumLit(n) => {
+                    self.push(Value::new_num(n));
                 },
                 Expr::Quote(_) => {
                     let mut quote_cursor = cursor.clone();
