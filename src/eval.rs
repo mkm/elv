@@ -90,7 +90,7 @@ impl VM {
                     let arg3 = self.pop()?;
                     let arg2 = self.pop()?;
                     let haystack = self.pop()?.as_string()?;
-                    self.push(Value::new_str(haystack.replace(&arg2.as_string()?, &arg3.as_string()?)));
+                    self.push(Value::new_str(&haystack.replace(&arg2.as_string()?, &arg3.as_string()?)));
                 },
                 "inc" => {
                     let a = self.pop()?.as_num()?;
@@ -138,13 +138,13 @@ impl VM {
                 },
                 "read" => {
                     let contents = std::fs::read_to_string(self.pop()?.as_string()?).ok()?;
-                    self.push(Value::new_str(contents));
+                    self.push(Value::new_str(&contents));
                 },
                 "lines" => {
                     let arg = self.pop()?.as_string()?;
                     let lines = arg.split('\n');
-                    let mut result: Vec<_> = lines.map(|line| Value::new_str(line.to_string())).collect();
-                    if result.last() == Some(&Value::new_str(String::new())) {
+                    let mut result: Vec<_> = lines.map(Value::new_str).collect();
+                    if result.last() == Some(&Value::new_str("")) {
                         result.pop().unwrap();
                     }
                     self.push(Value::new_list(result));
@@ -152,7 +152,7 @@ impl VM {
                 "words" => {
                     let arg = self.pop()?.as_string()?;
                     let words = arg.split(|c: char| !c.is_alphanumeric());
-                    self.push(Value::new_list(words.map(|word| Value::new_str(word.to_string())).collect()));
+                    self.push(Value::new_list(words.map(|word| Value::new_str(word)).collect()));
                 },
                 "split" => {
                     let sep = self.pop()?;
@@ -187,7 +187,7 @@ impl VM {
                 "crange" => {
                     let upper = self.pop()?.as_char()?;
                     let lower = self.pop()?.as_char()?;
-                    self.push(Value::new_list((lower ..= upper).map(|c| Value::new_str(String::from(c))).collect()));
+                    self.push(Value::new_list((lower ..= upper).map(Value::new_char).collect()));
                 },
                 "indexed" => {
                     let list = self.pop()?.as_list()?;
@@ -211,6 +211,12 @@ impl VM {
                     self.push(Value::new_list(vm.stack))
                 },
                 "each" => {
+                    let list = self.pop()?.as_list()?;
+                    for value in list.into_iter() {
+                        self.push(value)
+                    }
+                },
+                "reach" => {
                     let list = self.pop()?.as_list()?;
                     for value in list.into_iter().rev() {
                         self.push(value)
@@ -346,7 +352,7 @@ impl VM {
                     self.eval_prim(trace, prim.as_str());
                 },
                 Expr::StrLit(s) => {
-                    self.push(Value::new_str(s.clone()));
+                    self.push(Value::new_str(&s));
                 },
                 Expr::NumLit(n) => {
                     self.push(Value::new_num(n));

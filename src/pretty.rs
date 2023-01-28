@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::io::Write;
 use std::rc::Rc;
 use terminal::{Terminal, Action, Color};
+use unicode_width::UnicodeWidthChar;
 
 #[derive(Debug, Clone, Copy)]
 pub struct Pos {
@@ -44,7 +45,7 @@ enum EvalLayout {
     VConcat(Box<EvalLayout>, Box<EvalLayout>),
     HLine(Symbol),
     VLine(Symbol),
-    Text(Rc<[Symbol]>),
+    Text(Rc<[Symbol]>, usize),
     ExactWidth(Box<EvalLayout>, usize),
     ExactHeight(Box<EvalLayout>, usize),
     Weight(Box<EvalLayout>, f64),
@@ -140,7 +141,8 @@ impl Layout {
                 EvalLayout::VLine(*symbol)
             },
             Self::Text(s) => {
-                EvalLayout::Cached(HashMap::new(), Box::new(EvalLayout::Text(s.clone().into())))
+                let space = s.iter().map(|c| c.glyph.width().unwrap_or(0)).sum();
+                EvalLayout::Cached(HashMap::new(), Box::new(EvalLayout::Text(s.clone().into(), space)))
             },
             Self::ExactWidth(layout, width) => {
                 EvalLayout::ExactWidth(Box::new(layout.to_eval()), *width)
@@ -324,9 +326,9 @@ impl EvalLayout {
                 };
                 Some((SizedLayout::Fill(*symbol, size), score))
             },
-            Self::Text(symbols) => {
-                let space = size.width * size.height;
-                Some((SizedLayout::Text(symbols.clone(), size), symbols.len().min(space) as f64))
+            Self::Text(symbols, space) => {
+                let avail_space = size.width * size.height;
+                Some((SizedLayout::Text(symbols.clone(), size), avail_space.min(*space) as f64))
             },
             Self::ExactWidth(a, _) => {
                 a.eval(size)
@@ -412,18 +414,20 @@ impl SizedLayout {
             Self::Text(symbols, size) => {
                 let mut cursor = pos;
                 for symbol in symbols.iter() {
-                    if cursor.x >= pos.x + size.width {
-                        cursor.x = pos.x;
-                        cursor.y += 1;
+                    if let Some(advance) = symbol.glyph.width() {
+                        if cursor.x + advance > pos.x + size.width {
+                            cursor.x = pos.x;
+                            cursor.y += 1;
+                        }
+                        if cursor.y >= pos.y + size.height {
+                            break;
+                        }
+                        term.batch(Action::MoveCursorTo(cursor.x as u16, cursor.y as u16)).unwrap();
+                        term.batch(Action::SetForegroundColor(symbol.foreground)).unwrap();
+                        term.batch(Action::SetBackgroundColor(symbol.background)).unwrap();
+                        write!(term, "{}", symbol.glyph).unwrap();
+                        cursor.x += advance;
                     }
-                    if cursor.y >= pos.y + size.height {
-                        break;
-                    }
-                    term.batch(Action::MoveCursorTo(cursor.x as u16, cursor.y as u16)).unwrap();
-                    term.batch(Action::SetForegroundColor(symbol.foreground)).unwrap();
-                    term.batch(Action::SetBackgroundColor(symbol.background)).unwrap();
-                    write!(term, "{}", symbol.glyph).unwrap();
-                    cursor.x += 1;
                 }
                 term.batch(Action::ResetColor).unwrap();
             },

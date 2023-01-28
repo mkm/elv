@@ -110,36 +110,36 @@ impl Shape {
 
     pub fn repr(&self) -> Value {
         match self {
-            shape if shape.is_string() => Value::new_str("string".to_string()),
-            Self::Void => Value::new_str("void".to_string()),
-            Self::Any => Value::new_str("any".to_string()),
-            Self::Char => Value::new_str("char".to_string()),
-            Self::Num => Value::new_str("num".to_string()),
+            shape if shape.is_string() => Value::new_str("string"),
+            Self::Void => Value::new_str("void"),
+            Self::Any => Value::new_str("any"),
+            Self::Char => Value::new_str("char"),
+            Self::Num => Value::new_str("num"),
             Self::Tuple(shapes) => {
-                let reprs: Vec<_> = once(Value::new_str("tuple".to_string())).chain(shapes.iter().map(Self::repr)).collect();
+                let reprs: Vec<_> = once(Value::new_str("tuple")).chain(shapes.iter().map(Self::repr)).collect();
                 Value::new_list(reprs)
             },
             Self::Array(shape, dim) => {
                 Value::new_list(vec![
-                    Value::new_str("array".to_string()),
+                    Value::new_str("array"),
                     shape.repr(),
                     Value::new_num(*dim as i64),
                 ])
             },
             Self::List(shape) => {
                 Value::new_list(vec![
-                    Value::new_str("list".to_string()),
+                    Value::new_str("list"),
                     shape.repr(),
                 ])
             },
             Self::Set(shape) => {
                 Value::new_list(vec![
-                    Value::new_str("set".to_string()),
+                    Value::new_str("set"),
                     shape.repr(),
                 ])
             },
             Self::Quote => {
-                Value::new_str("quote".to_string())
+                Value::new_str("quote")
             },
         }
     }
@@ -275,7 +275,7 @@ impl Value {
         Self::Num(val)
     }
 
-    pub fn new_str(val: String) -> Self {
+    pub fn new_str(val: &str) -> Self {
         Self::Ptr(Arc::new(Val::List(val.chars().map(Value::new_char).collect())))
     }
 
