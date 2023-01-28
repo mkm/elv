@@ -1,4 +1,5 @@
 #![feature(try_blocks)]
+#![feature(iter_intersperse)]
 use std::io::Write;
 use terminal::{Action, Clear, Value, Retrieved, Event, KeyCode};
 

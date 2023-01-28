@@ -115,7 +115,7 @@ impl Pretty for Shell {
     fn layout(&self) -> Layout {
         let cmdline = Layout::Weight(Box::new(self.cursor.layout()), 100f64);
         let sep = Layout::HLine(Symbol {
-            glyph: '~',
+            glyph: '≡',
             foreground: Color::Grey,
             background: Color::Black,
         });
@@ -124,7 +124,12 @@ impl Pretty for Shell {
             let mut trace = HashMap::new();
             vm.eval_cursor(&mut trace, Cursor::initial(self.cursor.program()));
             if let Some(snapshots) = trace.get(&self.cursor.shape()) {
-                Layout::VConcat(snapshots.iter().take(16).map(|snapshot| snapshot.layout()).collect())
+                let sep = Layout::HLine(Symbol {
+                    glyph: '~',
+                    foreground: Color::Grey,
+                    background: Color::Black,
+                });
+                Layout::VConcat(snapshots.iter().take(16).map(|snapshot| snapshot.layout()).intersperse(sep).collect())
             } else {
                 Layout::Empty
             }

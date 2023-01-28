@@ -47,6 +47,9 @@ impl VM {
     fn eval_prim(&mut self, trace: &mut Trace, prim: &str) {
         let result = try {
             match prim {
+                "del" => {
+                    self.pop()?;
+                },
                 "dup" => {
                     let value = self.pop()?;
                     self.push(value.clone());
@@ -97,6 +100,11 @@ impl VM {
                     let b = self.pop()?.as_num()?;
                     let a = self.pop()?.as_num()?;
                     self.push(Value::new_num(a + b));
+                },
+                "*" => {
+                    let b = self.pop()?.as_num()?;
+                    let a = self.pop()?.as_num()?;
+                    self.push(Value::new_num(a * b));
                 },
                 "/" => {
                     let b = self.pop()?.as_num()?;
@@ -195,7 +203,7 @@ impl VM {
                         Err(_) => self.push(Value::new_poison()),
                     }
                 },
-                "list" => {
+                "collect" => {
                     let arg = self.pop()?;
                     let cursor = arg.as_quote()?;
                     let mut vm = self.new_child();
@@ -313,6 +321,10 @@ impl VM {
                     let mut temp = self.stack.split_off(index);
                     self.eval_cursor(trace, cursor);
                     self.stack.append(&mut temp);
+                },
+                "shape" => {
+                    let arg = self.pop()?;
+                    self.push(arg.shape().repr());
                 },
                 _ => {
                     None?;
