@@ -1,3 +1,4 @@
+use num_bigint::BigInt;
 use terminal::Color;
 use crate::pretty::{PrettyText, TextBuilder};
 
@@ -5,7 +6,7 @@ use crate::pretty::{PrettyText, TextBuilder};
 pub enum Expr {
     Ident(String),
     StrLit(String),
-    NumLit(i64),
+    NumLit(BigInt),
     Quote(Program),
 }
 

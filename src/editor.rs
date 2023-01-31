@@ -1,4 +1,5 @@
 use std::mem;
+use num_bigint::BigInt;
 use terminal::Color;
 use crate::{
     syntax::{Expr, Program},
@@ -11,7 +12,7 @@ pub enum Cursor {
     Quote(Program, Box<Cursor>, Program),
     Ident(Program, usize, Vec<char>, Program),
     StrLit(Program, usize, Vec<char>, Program),
-    NumLit(Program, Option<i64>, Program),
+    NumLit(Program, Option<BigInt>, Program),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -332,7 +333,7 @@ impl Cursor {
             },
             Self::NumLit(_, n, _) => {
                 if let Some(digit) = c.to_digit(10) {
-                    *n = Some(10 * n.unwrap_or(0) + digit as i64);
+                    *n = Some(n.take().unwrap_or_default() * 10 + digit);
                 }
             },
         }

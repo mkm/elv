@@ -1,5 +1,7 @@
 use std::sync::Arc;
 use std::iter::{zip, once};
+use num_bigint::BigInt;
+use num_traits::cast::ToPrimitive;
 use terminal::Color;
 use crate::{
     polyset::Polyset,
@@ -22,6 +24,7 @@ pub enum Shape {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Val {
+    Num(BigInt),
     List(Vec<Value>),
     Set(Polyset<Value>),
     Quote(Cursor),
@@ -123,7 +126,7 @@ impl Shape {
                 Value::new_list(vec![
                     Value::new_str("array"),
                     shape.repr(),
-                    Value::new_num(*dim as i64),
+                    Value::new_i64(*dim as i64),
                 ])
             },
             Self::List(shape) => {
@@ -146,6 +149,21 @@ impl Shape {
 }
 
 impl Val {
+    pub fn as_i64(&self) -> Option<i64> {
+        self.as_num()?.to_i64()
+    }
+
+    pub fn as_usize(&self) -> Option<usize> {
+        self.as_num()?.to_usize()
+    }
+
+    pub fn as_num(&self) -> Option<BigInt> {
+        match self {
+            Self::Num(num) => Some(num.clone()),
+            _ => None,
+        }
+    }
+
     pub fn as_list(&self) -> Option<Vec<Value>> {
         match self {
             Self::List(list) => Some(list.clone()),
@@ -181,6 +199,7 @@ impl Val {
 
     pub fn shape(&self) -> Shape {
         match self {
+            Self::Num(_) => Shape::Num,
             Self::List(list) => {
                 let shape = list.iter().map(Value::shape).fold(Shape::Void, Shape::union);
                 if list.len() <= 8 && list.iter().any(|s| s.shape() != shape) {
@@ -196,6 +215,9 @@ impl Val {
 
     fn shaped_text(&self, shape: &Shape, text: &mut TextBuilder) {
         match self {
+            Val::Num(num) => {
+                text.write_str(Color::Green, Color::Black, &format!("{num}"));
+            },
             Val::List(values) => {
                 match shape {
                     Shape::Array(elem_shape, _) | Shape::List(elem_shape) => {
@@ -271,28 +293,39 @@ impl Value {
         Self::Char(c)
     }
 
-    pub fn new_num(val: i64) -> Self {
+    pub fn new_i64(val: i64) -> Self {
         Self::Num(val)
     }
 
+    pub fn new_num(val: BigInt) -> Self {
+        match val.to_i64() {
+            Some(n) => Self::Num(n),
+            None => Self::new_val(Val::Num(val)),
+        }
+    }
+
     pub fn new_str(val: &str) -> Self {
-        Self::Ptr(Arc::new(Val::List(val.chars().map(Value::new_char).collect())))
+        Self::new_list(val.chars().map(Value::new_char).collect())
     }
 
     pub fn new_bool(val: bool) -> Self {
-        Self::new_num(if val { 1 } else { 0 })
+        Self::new_i64(if val { 1 } else { 0 })
     }
 
     pub fn new_list(val: Vec<Value>) -> Self {
-        Self::Ptr(Arc::new(Val::List(val)))
+        Self::new_val(Val::List(val))
     }
 
     pub fn new_set(val: Polyset<Value>) -> Self {
-        Self::Ptr(Arc::new(Val::Set(val)))
+        Self::new_val(Val::Set(val))
     }
 
     pub fn new_quote(val: Cursor) -> Self {
-        Self::Ptr(Arc::new(Val::Quote(val)))
+        Self::new_val(Val::Quote(val))
+    }
+
+    pub fn new_val(val: Val) -> Self {
+        Self::Ptr(Arc::new(val))
     }
 
     pub fn as_char(&self) -> Option<char> {
@@ -302,15 +335,29 @@ impl Value {
         }
     }
 
-    pub fn as_num(&self) -> Option<i64> {
+    pub fn as_i64(&self) -> Option<i64> {
         match self {
             Self::Num(n) => Some(*n),
-            _ => None,
+            _ => self.as_ptr()?.as_i64(),
+        }
+    }
+
+    pub fn as_usize(&self) -> Option<usize> {
+        match self {
+            Self::Num(n) => (*n).try_into().ok(),
+            _ => self.as_ptr()?.as_usize(),
+        }
+    }
+
+    pub fn as_num(&self) -> Option<BigInt> {
+        match self {
+            Self::Num(n) => Some((*n).into()),
+            _ => self.as_ptr()?.as_num(),
         }
     }
 
     pub fn as_bool(&self) -> Option<bool> {
-        match self.as_num()? {
+        match self.as_i64()? {
             0 => Some(false),
             1 => Some(true),
             _ => None,
@@ -359,12 +406,12 @@ impl Value {
                 text.write_str(Color::Black, Color::White, "☠");
             },
             Self::Char(c) => {
-                let s = match *c {
-                    '\n' => "↵".to_string(),
-                    ' ' => "⋅".to_string(),
-                    c => c.to_string(),
+                let c = match *c {
+                    '\n' => '↵',
+                    ' ' => '⋅',
+                    c => c,
                 };
-                text.write_str(Color::Green, Color::Black, &s);
+                text.write_char(Color::Green, Color::Black, c);
             },
             Self::Num(n) => {
                 text.write_str(Color::Green, Color::Black, &format!("{n}"));

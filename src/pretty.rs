@@ -95,13 +95,17 @@ impl TextBuilder {
         self.symbols
     }
 
+    pub fn write_char(&mut self, foreground: Color, background: Color, glyph: char) {
+        self.symbols.push(Symbol {
+            glyph,
+            foreground,
+            background,
+        });
+    }
+
     pub fn write_str(&mut self, foreground: Color, background: Color, s: &str) {
         for glyph in s.chars() {
-            self.symbols.push(Symbol {
-                glyph,
-                foreground,
-                background,
-            });
+            self.write_char(foreground, background, glyph);
         }
     }
 
@@ -142,7 +146,7 @@ impl Layout {
             },
             Self::Text(s) => {
                 let space = s.iter().map(|c| c.glyph.width().unwrap_or(0)).sum();
-                EvalLayout::Cached(HashMap::new(), Box::new(EvalLayout::Text(s.clone().into(), space)))
+                EvalLayout::Cached(HashMap::new(), Box::new(EvalLayout::Text(s[..].into(), space)))
             },
             Self::ExactWidth(layout, width) => {
                 EvalLayout::ExactWidth(Box::new(layout.to_eval()), *width)

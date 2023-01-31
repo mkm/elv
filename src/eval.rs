@@ -62,12 +62,12 @@ impl VM {
                     self.push(snd);
                 },
                 "copy" => {
-                    let index = self.pop()?.as_num()? as usize;
+                    let index = self.pop()?.as_usize()?;
                     let value = self.stack.get(self.stack.len() - 1 - index)?.clone();
                     self.push(value);
                 },
                 "move" => {
-                    let offset = self.pop()?.as_num()? as usize;
+                    let offset = self.pop()?.as_usize()?;
                     let index = self.stack.len() - 1 - offset;
                     if index < self.stack.len() {
                         let value = self.stack.remove(index);
@@ -161,7 +161,7 @@ impl VM {
                     self.push(Value::new_list(pieces.map(|piece| Value::new_list(piece.into_iter().cloned().collect())).collect()));
                 },
                 "splitat" => {
-                    let mut index = self.pop()?.as_num()?;
+                    let mut index = self.pop()?.as_i64()?;
                     let arg = self.pop()?;
                     let mut list: Vec<_> = arg.as_list()?;
                     if index < 0 {
@@ -171,7 +171,7 @@ impl VM {
                     self.push(Value::new_list(list));
                 },
                 "take" => {
-                    let mut count = self.pop()?.as_num()?;
+                    let mut count = self.pop()?.as_i64()?;
                     let mut list: Vec<_> = self.pop()?.as_list()?;
                     if count < 0 {
                         count = max(0, list.len() as i64 + count);
@@ -180,9 +180,9 @@ impl VM {
                     self.push(Value::new_list(list))
                 },
                 "irange" => {
-                    let upper = self.pop()?.as_num()?;
-                    let lower = self.pop()?.as_num()?;
-                    self.push(Value::new_list((lower ..= upper).map(|n| Value::new_num(n)).collect()));
+                    let upper = self.pop()?.as_i64()?;
+                    let lower = self.pop()?.as_i64()?;
+                    self.push(Value::new_list((lower ..= upper).map(|n| Value::new_i64(n)).collect()));
                 },
                 "crange" => {
                     let upper = self.pop()?.as_char()?;
@@ -192,7 +192,7 @@ impl VM {
                 "indexed" => {
                     let list = self.pop()?.as_list()?;
                     let indexed = list.iter().enumerate().map(|(i, v)| {
-                        Value::new_list(vec![Value::new_num(i as i64), v.clone()])
+                        Value::new_list(vec![Value::new_i64(i as i64), v.clone()])
                     });
                     self.push(Value::new_list(indexed.collect()));
                 },
@@ -232,16 +232,21 @@ impl VM {
                     self.push(Value::new_list(set.keys().cloned().collect()))
                 },
                 "iota" => {
-                    let count = self.pop()?.as_num()?;
-                    self.push(Value::new_list((0 .. count).map(|i| Value::new_num(i)).collect()));
+                    let count = self.pop()?.as_i64()?;
+                    self.push(Value::new_list((0 .. count).map(Value::new_i64).collect()));
+                },
+                "at" => {
+                    let offset = self.pop()?.as_usize()?;
+                    let list = self.pop()?.as_list()?;
+                    self.push(list.get(offset)?.clone());
                 },
                 "chunks" => {
-                    let size = self.pop()?.as_num()?;
+                    let size = self.pop()?.as_usize()?;
                     let list = self.pop()?.as_list()?;
-                    self.push(Value::new_list(list.chunks(size as usize).map(|chunk| Value::new_list(chunk.to_vec())).collect()));
+                    self.push(Value::new_list(list.chunks(size).map(|chunk| Value::new_list(chunk.to_vec())).collect()));
                 },
                 "frames" => {
-                    let size = self.pop()?.as_num()? as usize;
+                    let size = self.pop()?.as_usize()?;
                     let list = self.pop()?.as_list()?;
                     if size > list.len() {
                         self.push(Value::new_list(Vec::new()));
@@ -255,27 +260,42 @@ impl VM {
                 },
                 "len" => {
                     let arg = self.pop()?;
-                    self.push(Value::new_num(arg.as_slice()?.len() as i64));
+                    self.push(Value::new_i64(arg.as_slice()?.len() as i64));
                 },
                 "sum" => {
                     let arg = self.pop()?;
-                    let mut result: i64 = 0;
-                    for value in arg.as_list()? {
-                        result += value.as_num()?;
-                    }
+                    let result = arg
+                        .as_slice()?
+                        .iter()
+                        .map(|v| v.as_num())
+                        .reduce(|m, n| Some(m? + n?))??;
+                    self.push(Value::new_num(result));
+                },
+                "product" => {
+                    let arg = self.pop()?;
+                    let result = arg
+                        .as_slice()?
+                        .iter()
+                        .map(|v| v.as_num())
+                        .fold(Some(1.into()), |m, n| Some(m? * n?))?;
                     self.push(Value::new_num(result));
                 },
                 "max" => {
                     let arg = self.pop()?;
-                    let mut result: i64 = i64::MIN;
-                    for value in arg.as_list()? {
-                        result = max(result, value.as_num()?);
-                    }
+                    let result = arg
+                        .as_slice()?
+                        .iter()
+                        .map(|v| v.as_num())
+                        .reduce(|m, n| Some(m?.max(n?)))??;
                     self.push(Value::new_num(result));
                 },
+                "sort" => {
+                    let mut list = self.pop()?.as_list()?;
+                    list.sort();
+                    self.push(Value::new_list(list));
+                },
                 "rsort" => {
-                    let arg = self.pop()?;
-                    let mut list: Vec<_> = arg.as_list()?;
+                    let mut list = self.pop()?.as_list()?;
                     list.sort_by(|a, b| b.cmp(a));
                     self.push(Value::new_list(list));
                 },
@@ -290,7 +310,7 @@ impl VM {
                     let needle = self.pop()?;
                     match table.iter().position(|v| *v == needle) {
                         None => self.push(Value::new_poison()),
-                        Some(i) => self.push(Value::new_num(i as i64)),
+                        Some(i) => self.push(Value::new_i64(i as i64)),
                     }
                 },
                 "union" => {
@@ -318,7 +338,7 @@ impl VM {
                     self.push(Value::new_list(result));
                 },
                 "under" => {
-                    let count = self.pop()?.as_num()? as usize;
+                    let count = self.pop()?.as_usize()?;
                     let cursor = self.pop()?.as_quote()?.clone();
                     let index = self.stack.len() - count;
                     if index > self.stack.len() {
@@ -355,7 +375,7 @@ impl VM {
                     self.push(Value::new_str(&s));
                 },
                 Expr::NumLit(n) => {
-                    self.push(Value::new_num(n));
+                    self.push(Value::new_num(n.clone()));
                 },
                 Expr::Quote(_) => {
                     let mut quote_cursor = cursor.clone();

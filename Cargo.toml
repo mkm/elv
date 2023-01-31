@@ -7,4 +7,6 @@ edition = "2021"
 
 [dependencies]
 terminal = "0.2.1"
+num-traits = "0.2.15"
+num-bigint = "0.4.3"
 unicode-width = "0.1.10"
