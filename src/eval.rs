@@ -1,5 +1,6 @@
 use std::cmp::max;
 use std::collections::HashMap;
+use std::iter::repeat;
 use terminal::Color;
 use crate::{
     polyset::Polyset,
@@ -41,7 +42,11 @@ impl VM {
     }
 
     fn push(&mut self, value: Value) {
-        self.stack.push(value)
+        self.stack.push(value);
+    }
+
+    fn push_all(&mut self, values: impl IntoIterator<Item = Value>) {
+        self.stack.extend(values);
     }
 
     fn eval_prim(&mut self, trace: &mut Trace, prim: &str) {
@@ -54,6 +59,11 @@ impl VM {
                     let value = self.pop()?;
                     self.push(value.clone());
                     self.push(value);
+                },
+                "rep" => {
+                    let count = self.pop()?.as_usize()?;
+                    let value = self.pop()?;
+                    self.push_all(repeat(value).take(count));
                 },
                 "flip" => {
                     let fst = self.pop()?;
@@ -248,15 +258,7 @@ impl VM {
                 "frames" => {
                     let size = self.pop()?.as_usize()?;
                     let list = self.pop()?.as_list()?;
-                    if size > list.len() {
-                        self.push(Value::new_list(Vec::new()));
-                    } else {
-                        let mut result = Vec::new();
-                        for i in 0 .. list.len() - size {
-                            result.push(Value::new_list(list[i .. i + size].to_vec()));
-                        }
-                        self.push(Value::new_list(result));
-                    }
+                    self.push(Value::new_list(list.windows(size).map(|vs| Value::new_list(vs.to_vec())).collect()));
                 },
                 "len" => {
                     let arg = self.pop()?;
